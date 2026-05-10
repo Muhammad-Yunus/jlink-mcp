@@ -268,6 +268,9 @@ export abstract class ProbeBackend {
   /** List connected probes / scan for devices. Returns human-readable text. */
   abstract listDevices(): Promise<CommandResult>;
 
+  /** List physical probe emulators (serials/connections) at host level. */
+  abstract listProbes(): Promise<CommandResult>;
+
   // ── RTT support (optional - not all probes support this) ─────────
 
   /** Whether this probe supports RTT */
@@ -342,10 +345,15 @@ export abstract class ProbeBackend {
   parseMemoryDump(raw: string): MemoryDumpLine[] {
     const results: MemoryDumpLine[] = [];
     for (const line of raw.split("\n")) {
-      // J-Link format: "E000ED28 = 00 00 00 00 ..."
-      const jlinkMatch = line.match(/^([0-9A-Fa-f]{8})\s*=\s*(.+?)\s{2,}(.*)$/);
-      if (jlinkMatch) {
-        results.push({ address: `0x${jlinkMatch[1]}`, hex: jlinkMatch[2].trim(), ascii: jlinkMatch[3].trim() });
+      // J-Link format: "E000ED28 = 00 00 00 00 ..." (with or without ASCII column)
+      const jlinkWithAscii = line.match(/^([0-9A-Fa-f]{8})\s*=\s*(.+?)\s{2,}(.*)$/);
+      if (jlinkWithAscii) {
+        results.push({ address: `0x${jlinkWithAscii[1]}`, hex: jlinkWithAscii[2].trim(), ascii: jlinkWithAscii[3].trim() });
+        continue;
+      }
+      const jlinkNoAscii = line.match(/^([0-9A-Fa-f]{8})\s*=\s*([0-9A-Fa-f ]+)$/);
+      if (jlinkNoAscii) {
+        results.push({ address: `0x${jlinkNoAscii[1]}`, hex: jlinkNoAscii[2].trim(), ascii: "" });
         continue;
       }
       // OpenOCD / GDB format: "0xe000ed28: 00 00 00 00 ..."

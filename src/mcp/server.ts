@@ -85,6 +85,26 @@ export class JLinkMcpServer {
     );
 
     this.server.tool(
+      "list_probes",
+      "List physically connected debug probes (serial numbers/connections) without target attach flow.",
+      {},
+      async () => {
+        const result = await probe.listProbes();
+        const rawText = result.output || result.rawOutput || "";
+        const emuLines = rawText
+          .split("\n")
+          .map((l) => l.trim())
+          .filter((l) => /^J-Link\[\d+\]:/i.test(l));
+
+        const payload = JSON.stringify({
+          backend: probe.displayName,
+          probes: emuLines.length > 0 ? emuLines : rawText.split("\n").filter(l => l.trim())
+        });
+        return { content: [{ type: "text", text: payload }] };
+      }
+    );
+
+    this.server.tool(
       "set_device",
       "Set the target device name at runtime. Required before any debugging commands will work. Examples: 'nRF52840_XXAA', 'nRF5340_xxAA_APP', 'STM32F407VG', 'STM32L476RG'.",
       {

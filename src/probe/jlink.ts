@@ -31,6 +31,12 @@ const BOILERPLATE_PATTERNS = [
   /^Memory zones:/, /^\s+Zone:/, /^Cortex-M\d+ identified/, /^Type "connect"/,
   /^Please specify/, /^Specify target/, /^$/, /^J-Link>/, /^J-Link\[\d+\]:/,
   /^Syntax:/, /^Sleep\(\d+\)/, /^Script processing completed/,
+  /^SWD selected\./, /^Executing JTAG -> SWD switching sequence\./,
+  /^DAP initialized successfully\./, /^DPv0 detected/,
+  /^Scanning AP map to find all available APs/,
+  /^Iterating through AP map to find AHB-AP to use/,
+  /^I-Cache L1:/, /^D-Cache L1:/,
+  /^OnDisconnectTarget\(\) start/, /^OnDisconnectTarget\(\) end/,
 ];
 
 function stripBoilerplate(raw: string): string {
@@ -196,7 +202,14 @@ export class JLinkBackend extends ProbeBackend {
    * preflight is called inside acquireLock from withPreflight).
    */
   async preflight(): Promise<CommandResult | null> {
-    const result = await this.execRaw([`mem 0xE000EDF0, 4`]);
+    let result = await this.execRaw([`mem 0xE000EDF0, 4`]);
+
+    // Fallback once with reset+halt before declaring unreachable.
+    if (!result.success) {
+      await this.execRaw(["r", "halt", "sleep 100"]);
+      result = await this.execRaw([`mem 0xE000EDF0, 4`]);
+    }
+
     if (!result.success) {
       return {
         success: false,
@@ -252,7 +265,7 @@ export class JLinkBackend extends ProbeBackend {
 
   async flash(filePath: string, baseAddress?: number): Promise<CommandResult> {
     const addr = baseAddress !== undefined ? ` 0x${baseAddress.toString(16)}` : "";
-    return this.withPreflight("flash", () => this.execRaw(["r", "halt", `loadfile ${filePath}${addr}`, "r", "go"]));
+    return this.withPreflight("flash", () => this.execRaw(["r", "halt", `loadfile ${filePath}${addr}`, "r", "go"]), true);
   }
   async erase(): Promise<CommandResult> {
     return this.withPreflight("erase", () => this.execRaw(["erase"]));
@@ -266,7 +279,7 @@ export class JLinkBackend extends ProbeBackend {
   }
 
   async executeRaw(commands: string[]): Promise<CommandResult> {
-    return this.withPreflight("executeRaw", () => this.execRaw(commands));
+    return this.withPreflight("executeRaw", () => this.execRaw(commands), true);
   }
 
   // ── GDB Server ───────────────────────────────────────────────────
@@ -340,7 +353,12 @@ export class JLinkBackend extends ProbeBackend {
   }
 
   async listDevices(): Promise<CommandResult> {
-    // Run ShowEmuList without specifying a device to see connected probes
+    // Device/target-level scan (may include target memory zone details).
+    return this.executeRaw(["ShowEmuList"]);
+  }
+
+  async listProbes(): Promise<CommandResult> {
+    // Host-level emulator scan: run without target attach args to keep output focused on probes.
     const args = ["-NoGui", "1"];
     return new Promise<CommandResult>((resolve) => {
       const proc = spawn(this.jlinkExe, args, { stdio: ["pipe", "pipe", "pipe"] });
@@ -353,9 +371,18 @@ export class JLinkBackend extends ProbeBackend {
         resolve({ success: false, rawOutput: stdout, output: stdout, error: `Failed to run JLinkExe: ${err.message}` });
       });
       proc.on("exit", (code) => {
-        resolve({ success: code === 0, rawOutput: stdout, output: stripBoilerplate(stdout), error: stderr || undefined });
+        const rawCombined = [stdout, stderr].filter(Boolean).join("\n");
+        resolve({
+          success: code === 0,
+          rawOutput: rawCombined,
+          output: stripBoilerplate(rawCombined),
+          error: code === 0 ? undefined : (stderr || undefined),
+        });
       });
-      setTimeout(() => { proc.kill("SIGTERM"); resolve({ success: false, rawOutput: stdout, output: stdout, error: "Timed out" }); }, 10000);
+      setTimeout(() => {
+        proc.kill("SIGTERM");
+        resolve({ success: false, rawOutput: stdout, output: stripBoilerplate(stdout), error: "Timed out" });
+      }, 10000);
     });
   }
 

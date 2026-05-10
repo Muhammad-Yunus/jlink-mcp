@@ -64,7 +64,7 @@ function findJLinkInstallDir(): string {
   for (const dir of candidates) {
     if (fs.existsSync(dir)) return dir;
   }
-  // Also check with version suffix
+  // Also check with version suffix for Unix/Mac
   for (const base of ["/opt/SEGGER", "/Applications/SEGGER", "/usr/local/SEGGER"]) {
     if (fs.existsSync(base)) {
       try {
@@ -75,6 +75,18 @@ function findJLinkInstallDir(): string {
       } catch {
         // ignore
       }
+    }
+  }
+  // Also check Windows versioned folders (JLink_V844, etc)
+  const winBase = "C:\\Program Files\\SEGGER";
+  if (fs.existsSync(winBase)) {
+    try {
+      const entries = fs.readdirSync(winBase).filter((e) => e.startsWith("JLink"));
+      if (entries.length > 0) {
+        return path.join(winBase, entries.sort().reverse()[0]);
+      }
+    } catch {
+      // ignore
     }
   }
   return "";

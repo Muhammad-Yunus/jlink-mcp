@@ -231,5 +231,9 @@ export class OpenOCDBackend extends ProbeBackend {
     return this.exec(["init", "targets"]);
   }
 
+  async listProbes(): Promise<CommandResult> {
+    return this.listDevices();
+  }
+
   dispose(): void { this.processManager.kill(OPENOCD_PROCESS); }
 }

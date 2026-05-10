@@ -154,5 +154,9 @@ export class BlackMagicBackend extends ProbeBackend {
     return this.gdbExec(["monitor swdp_scan"]);
   }
 
+  async listProbes(): Promise<CommandResult> {
+    return this.listDevices();
+  }
+
   dispose(): void { /* nothing to clean up */ }
 }
